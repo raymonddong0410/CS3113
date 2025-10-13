@@ -10,8 +10,9 @@
 
 #include "starter/cs3113.h"
 
-enum MEATSTATUS {ACTIVE, INACTIVE};
-enum WINNER {NONE, LUFFY, ZORO};
+enum Meatstatus {ACTIVE, INACTIVE};
+enum Winner {NONE, LUFFY, ZORO};
+enum GameState {PLAYING, GAME_OVER};
 
 // Global Constants
 constexpr int SCREEN_WIDTH  = 1600 / 2,
@@ -65,11 +66,13 @@ Vector2 gLuffyPosition  = LUFFY_INIT_POS,
         // background for winners
         gBackgroundScale = {SCREEN_WIDTH, SCREEN_HEIGHT};
 
-MEATSTATUS  gFirstMeatStatus = ACTIVE,
+Meatstatus  gFirstMeatStatus = ACTIVE,
             gSecondMeatStatus = INACTIVE,
             gThirdMeatStatus = INACTIVE;
-
-WINNER  victor = NONE;
+// track winner
+Winner  victor = NONE;
+// track if playing or not (update or nah)
+GameState gGameState = PLAYING;
 
 Texture2D   gLuffyTexture,
             gZoroTexture,
@@ -92,7 +95,8 @@ void update();
 void render();
 void shutdown();
 bool isColliding(const Vector2 *positionA, const Vector2 *scaleA, const Vector2 *positionB, const Vector2 *scaleB);
-void updateMeat(const Vector2 *position, const Vector2 *movement, MEATSTATUS status, float deltaTime);
+void updateMeat(const Vector2 *position, const Vector2 *movement, Meatstatus status, float deltaTime);
+void resetGame();
 
 // Function Definitions
 
@@ -120,7 +124,7 @@ bool isColliding(const Vector2 *positionA,  const Vector2 *scaleA,
 }
 
 // avoid repeating the logic for deciding whether a meat sprite would be spawned
-void updateMeat(Vector2 *position, Vector2 *movement, MEATSTATUS status, float deltaTime)
+void updateMeat(Vector2 *position, Vector2 *movement, Meatstatus status, float deltaTime)
 {
     if (status == ACTIVE) {
         position->x += movement->x * SPEED * deltaTime;
@@ -134,9 +138,40 @@ void updateMeat(Vector2 *position, Vector2 *movement, MEATSTATUS status, float d
         if (isColliding(&gZoroPosition, &gZoroScale, position, &gMeatScale)) 
             movement->x = -movement->x;
 
-        if (position->x < 0) victor = ZORO;
-        else if (position->x > SCREEN_WIDTH) victor = LUFFY;
+        if (position->x < 0) {
+            victor = ZORO; 
+            gGameState = GAME_OVER;
+        }
+        else if (position->x > SCREEN_WIDTH) {
+            victor = LUFFY; 
+            gGameState = GAME_OVER;
+        }
     }
+}
+
+// reset game to initial state - works in with the gamestate enum
+// need to reset position so doesn't auto loss when resuming the update
+void resetGame() {
+    gLuffyPosition = LUFFY_INIT_POS;
+    gZoroPosition = ZORO_INIT_POS;
+
+    gFirstMeatPosition  = INIT_POS;
+    gFirstMeatMovement  = { 0.75f, 1.0f };
+    gFirstMeatStatus = ACTIVE;
+
+    gSecondMeatPosition  = {INIT_POS.x - 100.0f, INIT_POS.y};
+    gSecondMeatMovement  = { 1.0f, 1.0f };
+    gSecondMeatStatus = INACTIVE;
+
+    gThirdMeatPosition  = {INIT_POS.x + 100.0f, INIT_POS.y};
+    gThirdMeatMovement  = { -0.75f, 1.0f };
+    gThirdMeatStatus = INACTIVE;
+
+    gLuffyMovement = {0.0f, 0.0f};
+    gZoroMovement = {0.0f, 0.0f};
+
+    victor = NONE;
+    gGameState = PLAYING;
 }
 
 void renderObject(const Texture2D *texture, const Vector2 *position, 
@@ -176,7 +211,7 @@ void renderObject(const Texture2D *texture, const Vector2 *position,
 
 void initialise()
 {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "User Input / Collision Detection");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Project 2");
 
     startTime = time(NULL);
 
@@ -194,25 +229,59 @@ void initialise()
 
 void processInput() 
 {
-    if (IsKeyPressed(KEY_T)) {
-        // switch between two modes
-       isSinglePlayer = !isSinglePlayer;
-    }
+    switch (gGameState) {
+        // if game in state of playing
+        case (PLAYING):
+            if (IsKeyPressed(KEY_T)) {
+                // switch between two modes
+                isSinglePlayer = !isSinglePlayer;
+            }
 
-    if (IsKeyPressed(KEY_ONE)) {
-        gFirstMeatStatus = ACTIVE;
-        gSecondMeatStatus = INACTIVE;
-        gThirdMeatStatus = INACTIVE;
-    }
-    else if (IsKeyPressed(KEY_TWO)) {
-        gFirstMeatStatus = ACTIVE;
-        gSecondMeatStatus = ACTIVE;
-        gThirdMeatStatus = INACTIVE;
-    }
-    else if (IsKeyPressed(KEY_THREE)) {
-        gFirstMeatStatus = ACTIVE;
-        gSecondMeatStatus = ACTIVE;
-        gThirdMeatStatus = ACTIVE;
+            // if single player then auto right side (zoro)
+            if (isSinglePlayer) {
+                gLuffyMovement = {0.0f, 0.0f};
+                // using else if so can't go up and down
+                if (IsKeyDown(KEY_W)) gLuffyMovement.y = -0.75;
+                else if (IsKeyDown(KEY_S)) gLuffyMovement.y = 0.75;
+
+                if (gZoroMovement.y == 0) // make it so it goes up first if auto
+                    gZoroMovement.y = -0.75;
+                // set bounds (change direction if it touches top or bottom yk)
+                if (gZoroPosition.y - gZoroScale.y / 2 <= 0) gZoroMovement.y = 0.75;
+                else if (gZoroPosition.y + gZoroScale.y / 2 >=  SCREEN_HEIGHT) gZoroMovement.y = -0.75;
+            }
+            else {
+                gLuffyMovement = {0.0f, 0.0f};
+                if (IsKeyDown(KEY_W)) gLuffyMovement.y = -0.75;
+                else if (IsKeyDown(KEY_S)) gLuffyMovement.y = 0.75;
+
+                gZoroMovement = {0.0f, 0.0f};
+                if (IsKeyDown(KEY_UP)) gZoroMovement.y = -0.75;
+                else if (IsKeyDown(KEY_DOWN)) gZoroMovement.y = 0.75;
+            }
+
+            if (IsKeyPressed(KEY_ONE)) {
+                gFirstMeatStatus = ACTIVE;
+                gSecondMeatStatus = INACTIVE;
+                gThirdMeatStatus = INACTIVE;
+            }
+            else if (IsKeyPressed(KEY_TWO)) {
+                gFirstMeatStatus = ACTIVE;
+                gSecondMeatStatus = ACTIVE;
+                gThirdMeatStatus = INACTIVE;
+            }
+            else if (IsKeyPressed(KEY_THREE)) {
+                gFirstMeatStatus = ACTIVE;
+                gSecondMeatStatus = ACTIVE;
+                gThirdMeatStatus = ACTIVE;
+            }
+            break;
+
+        case (GAME_OVER):
+            if (IsKeyPressed(KEY_R)) {
+                resetGame();
+            }
+            break;
     }
 
     if (IsKeyPressed(KEY_Q) || WindowShouldClose()) gAppStatus = TERMINATED;
@@ -220,33 +289,13 @@ void processInput()
 
 void update() 
 {
+    // check if game over
+    if (gGameState == GAME_OVER) return;
+
     // Delta time
     float ticks = (float) GetTime();
     float deltaTime = ticks - gPreviousTicks;
     gPreviousTicks  = ticks;
-
-    // if single player then auto right side (zoro)
-    if (isSinglePlayer) {
-        gLuffyMovement = {0.0f, 0.0f};
-        // using else if so can't go up and down
-        if (IsKeyDown(KEY_W)) gLuffyMovement.y = -0.75;
-        else if (IsKeyDown(KEY_S)) gLuffyMovement.y = 0.75;
-
-        if (gZoroMovement.y == 0) // make it so it goes up first if auto
-            gZoroMovement.y = -0.75;
-        // set bounds (change direction if it touches top or bottom yk)
-        if (gZoroPosition.y - gZoroScale.y / 2 <= 0) gZoroMovement.y = 0.75;
-        else if (gZoroPosition.y + gZoroScale.y / 2 >=  SCREEN_HEIGHT) gZoroMovement.y = -0.75;
-    }
-    else {
-        gLuffyMovement = {0.0f, 0.0f};
-        if (IsKeyDown(KEY_W)) gLuffyMovement.y = -0.75;
-        else if (IsKeyDown(KEY_S)) gLuffyMovement.y = 0.75;
-
-        gZoroMovement = {0.0f, 0.0f};
-        if (IsKeyDown(KEY_UP)) gZoroMovement.y = -0.75;
-        else if (IsKeyDown(KEY_DOWN)) gZoroMovement.y = 0.75;
-    }
 
     // luffy movement
     gLuffyPosition = {
@@ -280,23 +329,30 @@ void render()
     // don't need this since using image as background
     // ClearBackground(ColorFromHex(BG_COLOUR));
 
-    // render background
-    renderObject(&gBackgroundTexture, &ORIGIN, &gBackgroundScale);
+    switch (gGameState) {
+        case (PLAYING):
+            // render background
+            renderObject(&gBackgroundTexture, &ORIGIN, &gBackgroundScale);
 
-    // render Luffy
-    renderObject(&gLuffyTexture, &gLuffyPosition, &gLuffyScale);
+            // render Luffy
+            renderObject(&gLuffyTexture, &gLuffyPosition, &gLuffyScale);
 
-    // render Zoro
-    renderObject(&gZoroTexture, &gZoroPosition, &gZoroScale);
+            // render Zoro
+            renderObject(&gZoroTexture, &gZoroPosition, &gZoroScale);
 
-    // render the meats
-    if (gFirstMeatStatus == ACTIVE) renderObject(&gFirstMeatTexture, &gFirstMeatPosition, &gMeatScale);
-    if (gSecondMeatStatus == ACTIVE) renderObject(&gSecondMeatTexture, &gSecondMeatPosition, &gMeatScale);
-    if (gThirdMeatStatus == ACTIVE) renderObject(&gThirdMeatTexture, &gThirdMeatPosition, &gMeatScale);
+            // render the meats
+            if (gFirstMeatStatus == ACTIVE) renderObject(&gFirstMeatTexture, &gFirstMeatPosition, &gMeatScale);
+            if (gSecondMeatStatus == ACTIVE) renderObject(&gSecondMeatTexture, &gSecondMeatPosition, &gMeatScale);
+            if (gThirdMeatStatus == ACTIVE) renderObject(&gThirdMeatTexture, &gThirdMeatPosition, &gMeatScale);
 
-    // winner screens
-    if (victor == LUFFY) renderObject(&gLuffyWinnerTexture, &ORIGIN, &gBackgroundScale);
-    else if (victor == ZORO) renderObject(&gZoroWinnerTexture, &ORIGIN, &gBackgroundScale);
+            break;
+        case (GAME_OVER):
+            // winner screens
+            if (victor == LUFFY) renderObject(&gLuffyWinnerTexture, &ORIGIN, &gBackgroundScale);
+            else if (victor == ZORO) renderObject(&gZoroWinnerTexture, &ORIGIN, &gBackgroundScale);
+
+            break;
+    }
 
     EndDrawing();
 }
